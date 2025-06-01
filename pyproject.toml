@@ -1,0 +1,15 @@
+[project]
+name = "ptop"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+ptop = "ptop.main:main"
+
+[tool.semantic_release]
+version_variable = ["src/ptop/main.py:__version__"]
+version_source = "tag"
+branch = "main"
