@@ -91,54 +91,90 @@ def get_cpu_usage(prev):
         usage = 0
     return usage, (total, idle)
 
-def draw_process_page(stdscr, offset, height, width):
-    stdscr.addstr(0, 0, " PID   USER       CPU%   MEM%   COMMAND", curses.A_BOLD)
-    processes = read_processes()
-    for idx, proc in enumerate(processes[offset:offset + height - 2]):
-        line = f"{proc['pid']:5}  {proc['user'][:10]:10}  {proc['cpu']:5.1f}  {proc['mem']:5.1f}  {proc['cmd'][:width - 35]}"
-        stdscr.addstr(idx + 1, 0, line)
+def draw_box(stdscr, y, x, h, w, title=None):
+    max_y, max_x = stdscr.getmaxyx()
+    # Clamp box size to fit inside the window
+    h = min(h, max_y - y)
+    w = min(w, max_x - x)
+    if h < 2 or w < 2:
+        return  # Not enough space to draw a box
+    try:
+        stdscr.attron(curses.A_DIM)
+        stdscr.hline(y, x + 1, curses.ACS_HLINE, w - 2)
+        stdscr.hline(y + h - 1, x + 1, curses.ACS_HLINE, w - 2)
+        stdscr.vline(y + 1, x, curses.ACS_VLINE, h - 2)
+        stdscr.vline(y + 1, x + w - 1, curses.ACS_VLINE, h - 2)
+        stdscr.addch(y, x, curses.ACS_ULCORNER)
+        stdscr.addch(y, x + w - 1, curses.ACS_URCORNER)
+        stdscr.addch(y + h - 1, x, curses.ACS_LLCORNER)
+        stdscr.addch(y + h - 1, x + w - 1, curses.ACS_LRCORNER)
+        if title and w > 4:
+            stdscr.addstr(y, x + 2, f" {title} ", curses.A_BOLD)
+        stdscr.attroff(curses.A_DIM)
+    except curses.error:
+        pass  # Ignore drawing errors if box doesn't fit
 
-def draw_summary_page(stdscr):
+def draw_process_page(stdscr, offset, height, width):
+    box_h = height - 2
+    box_w = width - 2
+    draw_box(stdscr, 0, 0, box_h + 2, box_w + 2, title="Processes")
+    stdscr.addstr(1, 2, " PID   USER       CPU%   MEM%   COMMAND", curses.A_BOLD)
+    processes = read_processes()
+    for idx, proc in enumerate(processes[offset:offset + box_h - 2]):
+        line = f"{proc['pid']:5}  {proc['user'][:10]:10}  {proc['cpu']:5.1f}  {proc['mem']:5.1f}  {proc['cmd'][:box_w - 35]}"
+        stdscr.addstr(idx + 2, 2, line)
+
+def draw_summary_and_cpu_page(stdscr, cpu_history):
+    height, width = stdscr.getmaxyx()
+    mid = width // 2
+    box_h = height - 2
+    left_w = mid - 1
+    right_w = width - mid - 1
+    # Left pane: summary
+    draw_box(stdscr, 0, 0, box_h + 2, left_w + 2, title="System Summary")
     used, free, total = get_memory_info()
     load = get_load_average()
     uptime = get_uptime()
     cpu_count = os.cpu_count()
-
-    stdscr.addstr(0, 0, "System Summary", curses.A_BOLD)
     stdscr.addstr(2, 2, f"Uptime: {uptime:.0f} seconds")
     stdscr.addstr(3, 2, f"Memory: {used} KB used / {total} KB total")
     stdscr.addstr(4, 2, f"Load Avg: {load}")
     stdscr.addstr(5, 2, f"CPU Cores: {cpu_count}")
-
-def draw_cpu_graph_page(stdscr, cpu_history):
-    stdscr.addstr(0, 0, "CPU Usage (Last 60s)", curses.A_BOLD)
-    height, width = stdscr.getmaxyx()
-    graph_height = height - 2
-    for i in range(min(len(cpu_history), width)):
+    # Right pane: CPU graph
+    draw_box(stdscr, 0, mid, box_h + 2, right_w + 2, title="CPU Usage (Last 60s)")
+    graph_height = box_h
+    graph_width = right_w
+    for i in range(min(len(cpu_history), graph_width)):
         usage = cpu_history[-i - 1]
         bar_height = int((usage / 100) * graph_height)
         for j in range(bar_height):
-            stdscr.addstr(graph_height - j, width - i - 1, '|')
+            stdscr.addstr(graph_height - j + 1, width - i - 2, '|')
 
 def draw(stdscr):
     curses.curs_set(0)
     stdscr.nodelay(True)
-    height, width = stdscr.getmaxyx()
+    min_height, min_width = 16, 60
     offset = 0
-    page = 0  # 0 = processes, 1 = summary, 2 = cpu graph
+    page = 0  # 0 = processes, 1 = summary+cpu
     cpu_prev = None
     cpu_history = []
 
     while True:
         stdscr.clear()
+        height, width = stdscr.getmaxyx()
+        if height < min_height or width < min_width:
+            msg = f"Terminal too small! Please resize to at least {min_width}x{min_height}."
+            stdscr.addstr(0, 0, msg, curses.A_BOLD)
+            stdscr.refresh()
+            time.sleep(1)
+            continue
         if page == 0:
             draw_process_page(stdscr, offset, height, width)
         elif page == 1:
-            draw_summary_page(stdscr)
-        elif page == 2:
-            draw_cpu_graph_page(stdscr, cpu_history)
+            draw_summary_and_cpu_page(stdscr, cpu_history)
 
-        stdscr.addstr(height - 1, 0, f"[←/→ switch view] [↑/↓ scroll] [q to quit] Page: {page+1}")
+        draw_box(stdscr, height - 2, 0, 2, width, title=None)
+        stdscr.addstr(height - 1, 2, f"[←/→ switch view] [↑/↓ scroll] [q to quit] Page: {page+1}")
         stdscr.refresh()
         time.sleep(1)
 
@@ -157,10 +193,10 @@ def draw(stdscr):
                     offset -= 1
 
             if key == curses.KEY_RIGHT:
-                page = (page + 1) % 3
+                page = (page + 1) % 2
                 offset = 0
             elif key == curses.KEY_LEFT:
-                page = (page - 1) % 3
+                page = (page - 1) % 2
                 offset = 0
             elif key == ord('q'):
                 break
