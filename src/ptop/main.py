@@ -156,27 +156,33 @@ def draw(stdscr):
     min_height, min_width = 16, 60
     offset = 0
     page = 0  # 0 = processes, 1 = summary+cpu
+    prev_page = None
     cpu_prev = None
     cpu_history = []
 
     while True:
-        stdscr.clear()
         height, width = stdscr.getmaxyx()
         if height < min_height or width < min_width:
+            stdscr.clear()
             msg = f"Terminal too small! Please resize to at least {min_width}x{min_height}."
             stdscr.addstr(0, 0, msg, curses.A_BOLD)
             stdscr.refresh()
             time.sleep(1)
+            prev_page = None  # force clear after resize
             continue
+        if page != prev_page:
+            stdscr.clear()
+            prev_page = page
         if page == 0:
             draw_process_page(stdscr, offset, height, width)
         elif page == 1:
+            stdscr.clear() # clear screen for summary+cpu
             draw_summary_and_cpu_page(stdscr, cpu_history)
 
         draw_box(stdscr, height - 2, 0, 2, width, title=None)
         stdscr.addstr(height - 1, 2, f"[←/→ switch view] [↑/↓ scroll] [q to quit] Page: {page+1}")
         stdscr.refresh()
-        time.sleep(1)
+        time.sleep(0.2)
 
         # CPU history
         cpu_usage, cpu_prev = get_cpu_usage(cpu_prev)
